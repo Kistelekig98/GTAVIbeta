@@ -16,6 +16,7 @@
 #include "drawing.h"
 #include "touch.h"
 #include "gyroscope.h"
+#include "CarFunctions.h"
 
 #include "UartFifo.h"
 #include "MessageHandler.h"
@@ -33,8 +34,8 @@ static void SystemClock_Config(void);
 char buff[20];
 uint32_t frameTime;
 
-int main(void)
-{
+int main(void) {
+// ======================= INICIALIZÁLÁSOK ====================================================================
 	gyro_t gyroVal;
 
 	SystemClock_Config();
@@ -47,7 +48,7 @@ int main(void)
 
 //	UartFifoInit();
 
-	InitWindowManager();		//kell
+	InitWindowManager();	//kell
 
 	DRV_VCP_Init();
 	DRV_TS_Init();
@@ -57,120 +58,180 @@ int main(void)
 
 	DRV_VCP_WriteString("TemaLabor Hello.\r\n");
 
-	SetActiveWindow(GetMenuWindow());		//kell
+	SetActiveWindow(GetMenuWindow());	//kell
 
 	uint8_t fifobyte;
 	pMessage_t pMessage;
 	uint8_t generateSignal=1;
 
-//		Tabula Rasa
-//---------------------------------------------------------------------
-	BSP_LCD_SelectLayer(1);
-	BSP_LCD_Clear();
-	BSP_LCD_SetLayerVisible(1, DISABLE);
-	BSP_LCD_SetLayerVisible(0, ENABLE);
+// ======================= A LÉNYEG ======================================================================
+	bool start = false;						// true-ra indul majd a játék
+	bool alive = true;						// ha ütközünk, false-ra vált
 
-	BSP_LCD_SelectLayer(0);
-	DRV_Display_Clear();
-//---------------------------------------------------------------------
-//##################################################################
-//##################################################################
-	bool start = false;
+	// ------------------- FŐCÍM -------------------------------------------------------------------------
+		Pixel TitlePx;													// Pozíció
+		TitlePx.x = 120;
+		TitlePx.y = 250;
 
-		Pixel p;				// Főcím középpontja
-		p.x = 120;
-		p.y = 250;
+		char* TitleText = "GTA VI open beta";							// Szöveg
 
-		Pixel p2;				//Start körvonala bal alsó p ja
-		p2.x = 90;
-		p2.y = 82;
+		DRV_Display_WriteStringAt(TitlePx, TitleText, ALIGN_Center);	// Kiíratás
 
-		uint16_t sWidth = 60;	// Start körvonal magassága, szélessége
-		uint16_t sHeight = 40;
+	// ------------------- START GOMB --------------------------------------------------------------------
+		Pixel StartButtonPx;				// Körvonal bal alsó pontja
+		StartButtonPx.x = 90;
+		StartButtonPx.y = 82;
 
-		Pixel p3;				//Start felirat közép pontja
-		p3.x = 120;
-		p3.y = 103;
+		uint16_t StartButtonWidth = 60;		// Körvonal magassága, szélessége
+		uint16_t StartButtonHeight = 40;
 
-		Pixel MyCarPos;			// Saját autó pozíciója
-		MyCarPos.x = 120;
-		MyCarPos.y = 45;
+		DRV_DrawRectangle(StartButtonPx, StartButtonHeight, StartButtonWidth, black);	// Körvonal kirajzolása
 
-		uint16_t CarWidth = 30;
-		uint16_t CarHeight = 60;
+		Pixel StartTextPx;					// Start felirat középpontja
+		StartTextPx.x = 120;
+		StartTextPx.y = 103;
 
-		typedef struct Car {	// egy  autó
-			Pixel CarPos;
-			uint32_t color;
-		} Car;
-//******************************
+		char* StartText = "Start";
 
-		char* str = "Hello";
-		char* str2 = "Start";
+		DRV_Display_WriteStringAt(StartTextPx, StartText, ALIGN_Center);				// Start felirat kiírása
 
-		DRV_Display_WriteStringAt(p, str, ALIGN_Center);
-		DRV_DrawRectangle(p2, sHeight, sWidth, black);
-		DRV_Display_WriteStringAt(p3, str2, ALIGN_Center);
+	// ------------------ AUTÓK KONFIGURÁLÁSA -----------------------------------------------------------
+		Car MyCar;							// Saját autó és paraméterei
+		MyCar.CarPos.x = 120;
+		MyCar.CarPos.y = 45;
+		MyCar.color = 0xFF9F87E4;
 
+		uint8_t CarWidth = 30;				// Egy általános autó méretei
+		uint8_t CarHeight = 60;
 
-	//**************************************
+		uint8_t CycleCounter = 0;			// A főciklus ciklusait számoljuk ezzel
+		uint8_t CarDelay = 8;				// A főciklus minden ennyiedik futásakor küldünk be új autót
+		uint8_t VerticalSpeed = 15;			// A szembe jövő autók sebessége
 
+	// ------------------ AUTÓK TÁROLÁSA ----------------------------------------------------------------
+		Car CarArray[20];
 
-		uint16_t touchX;
-		uint16_t touchY;
+		for(int i = 0; i < 20; i++) {
+			CarArray[i].CarPos.x = 0;		// Kezdetban egy "ellenfél" autó sincsen
+			CarArray[i].CarPos.y = 0;		// Nem létező autó = minden adata 0
+			CarArray[i].color = 0;
+		}
+
+	// ------------------ START GOMB MEGNYOMÁSÁNAK VIZSGÁLATA -------------------------------------------
+	uint16_t touchX;						// Itt lett megérintve a képernyő
+	uint16_t touchY;
 
 	while(!start) {
 		if(DRV_TS_IsTouchDetected()){
 			touchX = DRV_TS_GetX();
 			touchY = DRV_TS_GetY();
-
-			if( (touchX >= p2.x) && (touchX <= p2.x + sWidth) && (touchY >= p2.y) && (touchY <= p2.y + sHeight) ) {
+											// Érintés a gombon belűl -> Start
+			if( (touchX >= StartButtonPx.x) && (touchX <= StartButtonPx.x + StartButtonWidth) &&
+				(touchY >= StartButtonPx.y) && (touchY <= StartButtonPx.y + StartButtonHeight) ) {
 				start = true;
 			}
 		}
 	}
 
-	srand(HAL_GetTick());
+	// ------------------ EGYÉB BEÁLLÍTÁSOK ------------------------------------------------------------
+	srand(HAL_GetTick());					// rand() seedelése
 
-	Car Car1;
-	Car1.CarPos.x = 100;
-	Car1.CarPos.y = 350;
-	Car1.color = 0xFF00FF00;
+	uint8_t score = 0;						// Pontszám = kikerült autók száma
+	char scoreString[10];					// Ugyanez karaktertömbben
 
-// ============================== LOOP =======================================================
-	while(1) {
+	Pixel ActualScorePx;
+	ActualScorePx.x = 230;
+	ActualScorePx.y = 300;
 
+
+// ====================== LOOP - MAGA A JÁTÉK ==========================================================
+	while(alive) {
+
+	// ------------------ SAJÁT AUTÓ IRÁNYÍTÁSA --------------------------------------------------------
 		if(DRV_TS_IsTouchDetected()){
 
 			touchX = DRV_TS_GetX();
 			touchY = DRV_TS_GetY();
 
-			if(touchX > MyCarPos.x && MyCarPos.x < 225) {
-				MyCarPos.x += 10;
+			if(touchX > MyCar.CarPos.x && MyCar.CarPos.x < 225) {		// érintés az autótól balra
+				MyCar.CarPos.x += 10;
 			}
-			if(touchX <= MyCarPos.x && MyCarPos.x > 15) {
-				MyCarPos.x -= 10;
+			if(touchX <= MyCar.CarPos.x && MyCar.CarPos.x > 15) {		// érintés az autótól jobbra
+				MyCar.CarPos.x -= 10;
 			}
 		}
+
+
 
 		DRV_Display_Clear();
-		if(MyCarPos.x > 225){MyCarPos.x = 225;}
-		if(MyCarPos.x < 15){MyCarPos.x = 15;}
 
-
-
-		Car1.CarPos.y = Car1.CarPos.y -25;
-		if(Car1.CarPos.y < -30) {
-			Car1.CarPos.y = 350;
-
-			Car1.CarPos.x = rand() %220;
+		if(MyCar.CarPos.x > 225) {										// esetleges túlcsúszások megelőzése
+			MyCar.CarPos.x = 225;
+		}
+		if(MyCar.CarPos.x < 15) {
+			MyCar.CarPos.x = 15;
 		}
 
-		DRV_DrawCar(MyCarPos, CarHeight, CarWidth, 0xFF9F87E4);
-		DRV_DrawCar(Car1.CarPos, CarHeight, CarWidth, Car1.color);
-		HAL_Delay(50);
+	// ------------------ JÁTÉKMENET --------------------------------------------------------------------
+		if (CycleCounter == CarDelay || CycleCounter == 0) {			// Új autó beszúrása
+			CycleCounter = 0;
 
+			ShiftCarArray(&CarArray);									// Tömb shiftelése
+			AddCar(&CarArray);											// Beszúrás a tömb elejére
+		}
 
+		sprintf(scoreString, "%d", score);								// int -> char*
+		DrawScore(&scoreString, ActualScorePx);							// Pontszám kiírás
+
+		DrawCars(&CarArray, CarWidth, CarHeight);						// Autók kirajzolása
+
+		MoveCars(&CarArray, VerticalSpeed);								// Autók mozgatása
+
+		if(CheckCollision(&CarArray, &MyCar, CarWidth, CarHeight)) {	// Ütközés vizsgálata
+			alive = false;
+		}
+
+		DRV_DrawCar(MyCar.CarPos, CarHeight, CarWidth, 0xFF9F87E4);		// Saját autó kirajzolása
+
+		DRV_Display_SwitchBuffer();
+
+		score = DeleteCar(&CarArray, score);							// A képernyőből kiment autók törlése
+																		// + pontszám frissítése
+		HAL_Delay(30);
+		CycleCounter++;
+	}
+
+// ====================== GAME OVER KEZELÉSE ===========================================================
+
+	DRV_Display_Clear();
+
+	// ------------------ GAME OVER FELIRAT ------------------------------------------------------------
+	char* GameOverMsg = "Game Over";
+
+	Pixel GameOverPx;
+	GameOverPx.x = 120;
+	GameOverPx.y = 250;
+
+	DRV_Display_WriteStringAt(GameOverPx, GameOverMsg, ALIGN_Center);
+
+	// ------------------ PONTSZÁMKIJELZÉS ------------------------------------------------------------
+	Pixel FinalScoreTextPx;
+	FinalScoreTextPx.x = 80;
+	FinalScoreTextPx.y = 180;
+
+	char* FinalScoreText = "Score:";
+
+	DRV_Display_WriteStringAt(FinalScoreTextPx, FinalScoreText, ALIGN_Left);
+
+	Pixel FinalScorePx;
+	FinalScorePx.x = 160;
+	FinalScorePx.y = 180;
+
+	DrawScore(&scoreString, FinalScorePx);
+
+	DRV_Display_SwitchBuffer();
+
+// ===================== KONYEC FILMA =================================================================
 /*
 		if(DRV_TS_IsTouchDetected())
 
@@ -224,8 +285,11 @@ int main(void)
 		}
 */
 
-	}
+	// ------------ [ Az efölött lévő dolgok eredetileg a while(1)-ben voltak ] -----------------------
+
 }
+
+// ================ MAIN() VÉGE =======================================================================
 //---------------------------------------------------------
 /*//periodikusan ez újra
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)

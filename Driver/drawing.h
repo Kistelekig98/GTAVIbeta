@@ -20,7 +20,7 @@ typedef struct Color {
 	uint8_t red;
 	uint8_t green;
 	uint8_t blue;
-	uint8_t black ;		// �jdons�g
+	uint8_t black ;		// ˙jdons·g
 } Color;
 
 /**
@@ -90,6 +90,13 @@ void DRV_FillRectangle(Pixel p, uint16_t height, uint16_t width, Color color);
  */
 void DRV_FillCircle(Pixel center, uint16_t r, Color color);
 
+/** ---------- ÚJ -------------------------------------------------------------
+ * Autó kirajzolása a megadott helyre
+ * @param p az autó középpontja
+ * @param height a magasság (hosszúság)
+ * @param width a szélesség
+ * @param  color a szín
+ */
 void DRV_DrawCar(Pixel p, uint16_t height, uint16_t width, uint32_t color);
 
 

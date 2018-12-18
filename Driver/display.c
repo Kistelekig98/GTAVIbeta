@@ -24,16 +24,15 @@ void DRV_Display_Init(void)
 	BSP_LCD_SelectLayer(0);
 	BSP_LCD_Clear(LCD_COLOR_WHITE);
 	BSP_LCD_SetFont(&Font16);
-
 	BSP_LCD_SetLayerVisible(1, DISABLE);
 	BSP_LCD_SetLayerVisible(0, ENABLE);
+
 	BSP_LCD_SelectLayer(1);
 	BSP_LCD_Clear(LCD_COLOR_WHITE);
 	BSP_LCD_SetFont(&Font16);
 	ActiveFrame = 1;
-//---
-	BSP_LCD_SelectLayer(0);
-//------
+
+	BSP_LCD_SelectLayer(0);		// <- mi szúrtuk be ===================================================
 
 	BSP_LCD_DisplayOn();
 }
